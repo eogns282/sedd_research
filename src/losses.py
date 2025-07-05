@@ -1,7 +1,7 @@
 import torch
 from typing import Any, Callable
-from .diffusion.diffusion_process import DiffusionProcess
-from .model import TransformerModel
+from src.diffusion.diffusion_process import DiffusionProcess
+from src.model import TransformerModel
 
 def get_loss_fn(config: Any) -> Callable[[TransformerModel, torch.Tensor, DiffusionProcess], torch.Tensor]:
     """

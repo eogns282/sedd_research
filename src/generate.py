@@ -1,11 +1,11 @@
 import torch
 import os
 from typing import Any
-from configs import base_config as config
-from model import TransformerModel
-from diffusion.diffusion_process import DiffusionProcess
-from diffusion.noise_schedule import get_noise_schedule
-from diffusion.graph import UniformGraph
+from src.configs import base_config as config
+from src.model import TransformerModel
+from src.diffusion.diffusion_process import DiffusionProcess
+from src.diffusion.noise_schedule import get_noise_schedule
+from src.diffusion.graph import UniformGraph
 from transformers import BertTokenizer
 
 def main():
