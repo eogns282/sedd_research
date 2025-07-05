@@ -5,13 +5,13 @@ import os
 import argparse
 import wandb
 from typing import Any
-from configs import base_config as config
-from data import get_dataloader
-from model import TransformerModel
-from diffusion.diffusion_process import DiffusionProcess
-from diffusion.noise_schedule import get_noise_schedule
-from diffusion.graph import UniformGraph
-from losses import get_loss_fn
+from src.configs import base_config as config
+from src.data import get_dataloader
+from src.model import TransformerModel
+from src.diffusion.diffusion_process import DiffusionProcess
+from src.diffusion.noise_schedule import get_noise_schedule
+from src.diffusion.graph import UniformGraph
+from src.losses import get_loss_fn
 
 def main(args):
     """
