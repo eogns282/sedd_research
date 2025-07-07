@@ -14,8 +14,8 @@ echo "         STARTING FRAMEWORK VERIFICATION TEST"
 echo "======================================================"
 
 # --- Step 1: Run a short training session ---
-echo "\n--- Testing Training Pipeline ---"
-python src/trainer.py --config $CONFIG_FILE
+echo "\n--- Testing Training Pipeline (Debug Mode) ---"
+python src/trainer.py --config $CONFIG_FILE --debug
 if [ $? -ne 0 ]; then
     echo "Error: Training pipeline failed."
     exit 1

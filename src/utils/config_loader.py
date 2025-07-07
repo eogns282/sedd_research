@@ -29,7 +29,7 @@ def get_config() -> Any:
     and is the main entry point for accessing configuration in the project.
 
     Returns:
-        argparse.Namespace: An object containing the configuration.
+        Any: An object containing the configuration.
     """
     parser = argparse.ArgumentParser(description="SEDD Research Framework")
     parser.add_argument(
@@ -38,13 +38,23 @@ def get_config() -> Any:
         default="config.yaml",
         help="Path to the YAML configuration file."
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Run in debug mode with a small dataset."
+    )
     args = parser.parse_args()
     
     # Load the config from the specified YAML file
     cfg_dict = load_config(args.config)
     
     # Convert the nested dictionary to a Namespace object for attribute access
-    return dict_to_namespace(cfg_dict)
+    config = dict_to_namespace(cfg_dict)
+    
+    # Add the debug flag to the config
+    config.debug = args.debug
+    
+    return config
 
 def dict_to_namespace(d: Dict[str, Any]) -> argparse.Namespace:
     """

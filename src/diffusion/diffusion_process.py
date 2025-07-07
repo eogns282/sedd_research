@@ -26,23 +26,20 @@ class DiffusionProcess:
         trained model to iteratively denoise data, starting from pure noise
         to generate a clean sample. This is used for sampling/generation.
     """
-    def __init__(self, noise_schedule: NoiseSchedule, graph: Union[UniformGraph, AbsorbingGraph], config: Any):
+    def __init__(self, noise_schedule: NoiseSchedule, graph: Union[UniformGraph, AbsorbingGraph], diffusion_config: Any, vocab_config: Any):
         """
         Initializes the DiffusionProcess.
 
         Args:
-            noise_schedule (NoiseSchedule): An instance of a noise schedule class that
-                                            defines the noise level G(t) at any time t.
-            graph (Union[UniformGraph, AbsorbingGraph]): An instance of a graph class
-                                                         that defines the noising strategy
-                                                         (e.g., uniform or absorbing).
-            config (Any): The global configuration object, used to access parameters
-                          like the number of timesteps and special token IDs.
+            noise_schedule (NoiseSchedule): An instance of a noise schedule class.
+            graph (Union[UniformGraph, AbsorbingGraph]): An instance of a graph class.
+            diffusion_config (Any): The diffusion-specific configuration object.
+            vocab_config (Any): The vocabulary-specific configuration object.
         """
         self.noise_schedule = noise_schedule
         self.graph = graph
-        self.num_timesteps = config.NUM_TIMESTEPS
-        self.mask_token_id = config.MASK_TOKEN_ID
+        self.num_timesteps = diffusion_config.num_timesteps
+        self.mask_token_id = vocab_config.mask_token_id
 
     def add_noise(self, original_tokens: torch.Tensor, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
