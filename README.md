@@ -18,9 +18,10 @@ The framework is designed to be clear, extensible, and easy to use for comparing
 │   │   └─── config_loader.py # Handles loading YAML configs
 │   ├─── losses.py       # Training loss function
 │   └─── trainer.py      # Main training script
-├─── config.yaml       # Main configuration file for experiments
-├─── run_train.sh      # Example script to start a training run
-├─── run_final_analysis.sh # Runs a full analysis on specified models
+├─── uniform_config.yaml # Configuration for the Uniform model
+├─── absorbing_config.yaml # Configuration for the Absorbing model
+├─── run_final_experiments.sh # End-to-end script to train and analyze both models
+├─── run_verification_test.sh # Quick script to verify the environment
 └─── requirements.txt  # Python dependencies
 ```
 
@@ -37,39 +38,35 @@ The framework is designed to be clear, extensible, and easy to use for comparing
     pip install -r requirements.txt
     ```
 
-## How to Run
+## How to Run Experiments
 
-This framework is configured using `.yaml` files. The main configuration is `config.yaml`. You can create new config files for different experiments.
+This framework is configured using `.yaml` files. We provide `uniform_config.yaml` and `absorbing_config.yaml` as starting points.
 
-### 1. Training a Model
+### 1. Verifying the Framework
 
-To train a model, you can use the provided `run_train.sh` script.
+Before running long experiments, you can run a quick verification test to ensure all components are working correctly.
+```bash
+./run_verification_test.sh
+```
 
-1.  **Edit `config.yaml`** to define your experiment. Key parameters to change include:
-    - `exp_id`: A unique name for your experiment (e.g., `absorbing_v2`).
-    - `gpu`: The GPU index to use.
-    - `diffusion.graph_type`: The main variable for your research (`uniform` or `absorbing`).
-    - Other hyperparameters in the `model`, `diffusion`, and `training` sections.
+### 2. Running the Full Experiment Pipeline
 
-2.  **Run the training script:**
-    ```bash
-    ./run_train.sh
-    ```
-    The script will use the settings in `config.yaml` to run the training. Checkpoints and logs will be saved to the `checkpoints/` and `wandb/` directories under the `exp_id`.
+The main script for reproducing the core results is `run_final_experiments.sh`. This script will:
+1.  Train the **Uniform** model from scratch using `uniform_config.yaml`.
+2.  Train the **Absorbing** model from scratch using `absorbing_config.yaml`.
+3.  Run a full analysis (perplexity, diversity, infilling) on the best checkpoint of each model.
 
-### 2. Analyzing a Model
+To run the entire pipeline, simply execute:
+```bash
+./run_final_experiments.sh
+```
 
-Once a model is trained, you can run a comprehensive analysis on it using the `run_final_analysis.sh` script.
+### 3. Analyzing Results
 
-1.  **Edit `run_final_analysis.sh`** to specify the `exp_id` of the model(s) you want to analyze.
+After the final experiments are complete, all quantitative and qualitative results will be saved in the `analysis_results/` directory, under the `exp_id` specified in the config files (`final_uniform` and `final_absorbing`).
 
-2.  **Run the analysis script:**
-    ```bash
-    ./run_final_analysis.sh
-    ```
-    This will perform the following analyses:
-    - **Perplexity:** Calculated on the test set.
-    - **Generation Diversity:** Measured with Self-BLEU and Distinct-N metrics.
-    - **Infilling:** Assesses the model's contextual understanding.
+You can directly compare the summary files:
+- `analysis_results/final_uniform/summary.yaml`
+- `analysis_results/final_absorbing/summary.yaml`
 
-    All results, including generated samples and a YAML summary of metrics, will be saved to the `analysis_results/<your_exp_id>/` directory. This provides a clean and organized way to compare different experiments.
+This provides a clean and organized way to compare the performance of the two models.
