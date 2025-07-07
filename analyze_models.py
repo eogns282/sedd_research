@@ -14,6 +14,7 @@ import os
 import argparse
 import yaml
 from tqdm import tqdm
+from typing import Any, Dict, Tuple
 from nltk.translate.bleu_score import corpus_bleu, SmoothingFunction
 from collections import Counter
 from transformers import BertTokenizer
@@ -43,14 +44,27 @@ def load_model_from_checkpoint(checkpoint_path: str, device: torch.device) -> Tu
     if not os.path.exists(checkpoint_path):
         raise FileNotFoundError(f"Checkpoint not found at {checkpoint_path}")
         
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-    config = dict_to_namespace(checkpoint['config'])
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
     
-    model = TransformerModel(config.model).to(device)
+    # Check if the config is in the checkpoint, otherwise load from default file
+    if 'config' in checkpoint:
+        print("Loading configuration from checkpoint.")
+        # The config in the checkpoint is a dict, convert it to a namespace
+        if isinstance(checkpoint['config'], dict):
+            config = dict_to_namespace(checkpoint['config'])
+        else: # It's already a namespace
+            config = checkpoint['config']
+    else:
+        print("Warning: 'config' not found in checkpoint. Loading from default 'config.yaml'.")
+        from src.utils.config_loader import load_config
+        config_dict = load_config("config.yaml")
+        config = dict_to_namespace(config_dict)
+
+    model = TransformerModel(config).to(device)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.eval()
     
-    print(f"Successfully loaded model and config from {checkpoint_path}")
+    print(f"Successfully loaded model from {checkpoint_path}")
     return model, config
 
 def calculate_perplexity(model, config, device):
@@ -65,7 +79,7 @@ def calculate_perplexity(model, config, device):
         graph = UniformGraph(config.vocab.size)
     else:
         graph = AbsorbingGraph(config.vocab.size, config.vocab.mask_token_id)
-    diffusion_process = DiffusionProcess(noise_schedule, graph, config.diffusion)
+    diffusion_process = DiffusionProcess(noise_schedule, graph, config.diffusion, config.vocab)
 
     total_loss = 0
     total_samples = 0
@@ -172,7 +186,7 @@ def main(args):
         graph = UniformGraph(config.vocab.size)
     else:
         graph = AbsorbingGraph(config.vocab.size, config.vocab.mask_token_id)
-    diffusion_process = DiffusionProcess(noise_schedule, graph, config.diffusion)
+    diffusion_process = DiffusionProcess(noise_schedule, graph, config.diffusion, config.vocab)
 
     # --- Run Analyses ---
     results = {}

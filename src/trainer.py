@@ -20,6 +20,7 @@ from torch.cuda.amp import GradScaler, autocast
 import os
 import wandb
 from typing import Any
+import argparse
 
 # Local module imports
 from src.utils.config_loader import get_config
@@ -30,7 +31,7 @@ from src.diffusion.noise_schedule import get_noise_schedule
 from src.diffusion.graph import UniformGraph, AbsorbingGraph
 from src.losses import get_loss_fn
 
-def main():
+def main(debug: bool = False):
     """
     The main entry point for the training script.
     """
@@ -54,8 +55,8 @@ def main():
 
     # --- 3. Load Data ---
     print("Loading data...")
-    train_loader = get_dataloader('train', config)
-    val_loader = get_dataloader('validation', config)
+    train_loader = get_dataloader('train', config, debug=config.debug)
+    val_loader = get_dataloader('validation', config, debug=config.debug)
     print("Data loaded.")
 
     # --- 4. Initialize Model and Optimizer ---
@@ -76,7 +77,7 @@ def main():
     else:
         raise ValueError(f"Unknown graph type: {config.diffusion.graph_type}")
         
-    diffusion_process = DiffusionProcess(noise_schedule, graph, config.diffusion)
+    diffusion_process = DiffusionProcess(noise_schedule, graph, config.diffusion, config.vocab)
     loss_fn = get_loss_fn(config)
     print("Diffusion process initialized.")
 
