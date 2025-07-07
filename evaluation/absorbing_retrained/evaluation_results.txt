@@ -1,0 +1,4 @@
+--- Evaluation Results ---
+Checkpoint: checkpoints/absorbing_retrained/best_checkpoint.pt
+Average Loss: 0.5066
+Perplexity:     1.6597

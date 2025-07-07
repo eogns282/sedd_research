@@ -1,0 +1,4 @@
+--- Evaluation Results ---
+Checkpoint: checkpoints/20250705_162409/checkpoint_epoch_10.pt
+Average Loss: 0.4521
+Perplexity:     1.5716

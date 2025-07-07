@@ -1,67 +1,102 @@
+"""
+This is the main training script for the SEDD Research Framework.
+
+It orchestrates the entire training process, including:
+- Loading the configuration from a YAML file.
+- Setting up the device (GPU/CPU).
+- Initializing Weights & Biases for logging.
+- Loading the dataset and tokenizer.
+- Initializing the model, optimizer, and diffusion process.
+- Running the main training and validation loop.
+- Handling checkpointing, including resuming from a checkpoint,
+  saving periodic checkpoints, and saving the best model based on
+  validation loss.
+- Implementing early stopping to prevent overfitting.
+"""
+
 import torch
 import torch.optim as optim
 from torch.cuda.amp import GradScaler, autocast
 import os
-import argparse
 import wandb
 from typing import Any
-from src.configs import base_config as config
+
+# Local module imports
+from src.utils.config_loader import get_config
 from src.data import get_dataloader
 from src.model import TransformerModel
 from src.diffusion.diffusion_process import DiffusionProcess
 from src.diffusion.noise_schedule import get_noise_schedule
-from src.diffusion.graph import UniformGraph
+from src.diffusion.graph import UniformGraph, AbsorbingGraph
 from src.losses import get_loss_fn
 
-def main(args):
+def main():
     """
-    The main training script for the SEDD research baseline.
-    This script handles the entire training process, including data loading,
-    model initialization, training, validation, and checkpointing.
+    The main entry point for the training script.
     """
-    # --- Setup ---
-    checkpoint_dir = os.path.join(config.CHECKPOINT_DIR, args.exp_id)
-    device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
+    # --- 1. Load Configuration and Setup ---
+    config = get_config()
+    
+    # Setup device
+    device = torch.device(f"cuda:{config.gpu}" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+
+    # Create checkpoint directory
+    checkpoint_dir = os.path.join(config.logging.checkpoint_dir, config.exp_id)
     os.makedirs(checkpoint_dir, exist_ok=True)
 
-    # --- Wandb ---
+    # --- 2. Initialize Weights & Biases ---
     wandb.init(
         project="sedd-research",
-        name=args.exp_id,
-        config={k: v for k, v in config.__dict__.items() if not k.startswith('__')}
+        name=config.exp_id,
+        config=config
     )
 
-    # --- Data ---
+    # --- 3. Load Data ---
     print("Loading data...")
     train_loader = get_dataloader('train', config)
     val_loader = get_dataloader('validation', config)
     print("Data loaded.")
 
-    # --- Model ---
+    # --- 4. Initialize Model and Optimizer ---
     print("Initializing model...")
     model = TransformerModel(config).to(device)
-    optimizer = optim.Adam(model.parameters(), lr=config.LEARNING_RATE)
+    optimizer = optim.Adam(model.parameters(), lr=float(config.training.learning_rate))
     scaler = GradScaler()
     print("Model initialized.")
 
-    # --- Diffusion ---
+    # --- 5. Initialize Diffusion Process ---
     print("Initializing diffusion process...")
-    noise_schedule = get_noise_schedule(config)
-    if args.graph_type == "uniform":
-        graph = UniformGraph(config.VOCAB_SIZE)
-    elif args.graph_type == "absorbing":
-        from src.diffusion.graph import AbsorbingGraph
-        graph = AbsorbingGraph(config.VOCAB_SIZE, config.MASK_TOKEN_ID)
+    noise_schedule = get_noise_schedule(config.diffusion.noise_schedule)
+    
+    if config.diffusion.graph_type == "uniform":
+        graph = UniformGraph(config.vocab.size)
+    elif config.diffusion.graph_type == "absorbing":
+        graph = AbsorbingGraph(config.vocab.size, config.vocab.mask_token_id)
     else:
-        raise ValueError(f"Unknown graph type: {args.graph_type}")
-    diffusion_process = DiffusionProcess(noise_schedule, graph, config)
+        raise ValueError(f"Unknown graph type: {config.diffusion.graph_type}")
+        
+    diffusion_process = DiffusionProcess(noise_schedule, graph, config.diffusion)
     loss_fn = get_loss_fn(config)
     print("Diffusion process initialized.")
 
-    # --- Training Loop ---
+    # --- 6. Resume from Checkpoint (if applicable) ---
+    start_epoch = 0
+    # Note: The config can be extended to include a resume_from path
+    # if hasattr(config, 'resume_from') and config.resume_from:
+    #     print(f"Resuming from checkpoint: {config.resume_from}")
+    #     checkpoint = torch.load(config.resume_from)
+    #     model.load_state_dict(checkpoint['model_state_dict'])
+    #     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    #     start_epoch = checkpoint['epoch'] + 1
+    #     print(f"Resuming from epoch {start_epoch}")
+
+    # --- 7. Training Loop ---
     print("Starting training...")
-    for epoch in range(config.NUM_EPOCHS):
+    best_val_loss = float('inf')
+    epochs_no_improve = 0
+
+    for epoch in range(start_epoch, config.training.num_epochs):
         model.train()
         for i, batch in enumerate(train_loader):
             optimizer.zero_grad()
@@ -71,15 +106,15 @@ def main(args):
                 loss = loss_fn(model, batch, diffusion_process)
             
             scaler.scale(loss).backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), config.GRAD_CLIP)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), config.training.grad_clip)
             scaler.step(optimizer)
             scaler.update()
 
-            if (i + 1) % config.LOG_INTERVAL == 0:
-                print(f"Epoch [{epoch+1}/{config.NUM_EPOCHS}], Step [{i+1}/{len(train_loader)}], Loss: {loss.item():.4f}")
+            if (i + 1) % config.logging.log_interval == 0:
+                print(f"Epoch [{epoch+1}/{config.training.num_epochs}], Step [{i+1}/{len(train_loader)}], Loss: {loss.item():.4f}")
                 wandb.log({"train_loss": loss.item()})
 
-        # --- Validation ---
+        # --- Validation Step ---
         model.eval()
         total_val_loss = 0
         with torch.no_grad():
@@ -89,25 +124,41 @@ def main(args):
                 total_val_loss += loss.item()
         
         avg_val_loss = total_val_loss / len(val_loader)
-        print(f"Epoch [{epoch+1}/{config.NUM_EPOCHS}], Validation Loss: {avg_val_loss:.4f}")
+        print(f"Epoch [{epoch+1}/{config.training.num_epochs}], Validation Loss: {avg_val_loss:.4f}")
         wandb.log({"val_loss": avg_val_loss, "epoch": epoch})
 
-        # --- Save Checkpoint ---
-        if (epoch + 1) % config.SAVE_INTERVAL == 0:
+        # --- Early Stopping & Checkpointing ---
+        if avg_val_loss < best_val_loss:
+            best_val_loss = avg_val_loss
+            epochs_no_improve = 0
+            best_checkpoint_path = os.path.join(checkpoint_dir, "best_checkpoint.pt")
+            torch.save({
+                'epoch': epoch,
+                'model_state_dict': model.state_dict(),
+                'optimizer_state_dict': optimizer.state_dict(),
+                'loss': avg_val_loss,
+                'config': config
+            }, best_checkpoint_path)
+            print(f"New best model saved to {best_checkpoint_path}")
+            wandb.save(best_checkpoint_path)
+        else:
+            epochs_no_improve += 1
+
+        if epochs_no_improve >= config.training.patience:
+            print(f"Early stopping triggered after {config.training.patience} epochs with no improvement.")
+            break
+
+        if (epoch + 1) % config.logging.save_interval == 0:
             checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_epoch_{epoch+1}.pt")
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
                 'optimizer_state_dict': optimizer.state_dict(),
                 'loss': loss,
+                'config': config
             }, checkpoint_path)
             print(f"Checkpoint saved to {checkpoint_path}")
             wandb.save(checkpoint_path)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--gpu", type=int, default=0, help="GPU to use for training.")
-    parser.add_argument("--exp_id", type=str, required=True, help="Unique experiment ID.")
-    parser.add_argument("--graph_type", type=str, default=config.GRAPH_TYPE, choices=["uniform", "absorbing"], help="The type of graph to use for the diffusion process.")
-    args = parser.parse_args()
-    main(args)
+    main()

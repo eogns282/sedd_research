@@ -1,22 +1,43 @@
+"""
+This module defines the DiffusionProcess class, which orchestrates the
+forward (noising) and reverse (denoising) processes.
+
+It acts as a high-level controller that uses a NoiseSchedule and a Graph
+to perform the core operations of the diffusion model.
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Any, Tuple, Union
+
 from .noise_schedule import NoiseSchedule
 from .graph import UniformGraph, AbsorbingGraph
 
 class DiffusionProcess:
     """
-    Manages the forward (noising) and reverse (sampling) diffusion processes.
+    Manages the forward and reverse diffusion processes.
+
+    This class brings together the noise schedule and the state transition graph
+    to implement the two key operations of a diffusion model:
+    1.  `add_noise`: The forward process (q(x_t | x_0)), which gradually corrupts
+        clean data into noise. This is used during training.
+    2.  `remove_noise`: The reverse process (p(x_{t-1} | x_t)), which uses a
+        trained model to iteratively denoise data, starting from pure noise
+        to generate a clean sample. This is used for sampling/generation.
     """
     def __init__(self, noise_schedule: NoiseSchedule, graph: Union[UniformGraph, AbsorbingGraph], config: Any):
         """
-        Initializes the diffusion process.
+        Initializes the DiffusionProcess.
 
         Args:
-            noise_schedule (NoiseSchedule): The noise schedule to use.
-            graph (Union[UniformGraph, AbsorbingGraph]): The discrete state graph.
-            config (Any): The configuration object.
+            noise_schedule (NoiseSchedule): An instance of a noise schedule class that
+                                            defines the noise level G(t) at any time t.
+            graph (Union[UniformGraph, AbsorbingGraph]): An instance of a graph class
+                                                         that defines the noising strategy
+                                                         (e.g., uniform or absorbing).
+            config (Any): The global configuration object, used to access parameters
+                          like the number of timesteps and special token IDs.
         """
         self.noise_schedule = noise_schedule
         self.graph = graph
@@ -25,51 +46,81 @@ class DiffusionProcess:
 
     def add_noise(self, original_tokens: torch.Tensor, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Corrupts the tokens using the graph's transition sampler.
+        Performs the forward process to corrupt clean tokens into noisy tokens.
+
+        This function takes a batch of clean sequences (x_0) and a tensor of
+        timesteps (t), and returns a corrupted version (x_t) where the amount
+        of corruption is determined by the noise schedule at time t.
 
         Args:
-            original_tokens (torch.Tensor): The original tokens x_0. Shape: [batch_size, seq_len].
-            t (torch.Tensor): The continuous time t (from 0 to 1). Shape: [batch_size,].
+            original_tokens (torch.Tensor): The clean input tokens, x_0.
+                                            Shape: [batch_size, seq_len].
+            t (torch.Tensor): A tensor of continuous time values in [0, 1] for each
+                              item in the batch. Shape: [batch_size,].
 
         Returns:
-            Tuple[torch.Tensor, torch.Tensor]: A tuple containing the noisy tokens and the original tokens.
+            A tuple containing:
+            - noisy_tokens (torch.Tensor): The corrupted tokens, x_t.
+                                           Shape: [batch_size, seq_len].
+            - original_tokens (torch.Tensor): The original tokens, passed through for
+                                              convenience in loss calculation.
+                                              Shape: [batch_size, seq_len].
         """
+        # 1. Get the total noise G(t) from the schedule for the given timesteps.
         total_noise = self.noise_schedule.total(t)
-        noisy_tokens = self.graph.sample_transition(original_tokens, total_noise)
+
+        # 2. Calculate the corruption probability `p = 1 - exp(-G(t))`.
+        # This is the core formula linking the noise schedule to the probability
+        # of a token being altered.
+        corruption_prob = 1.0 - torch.exp(-total_noise)
+
+        # 3. Use the graph's `sample_transition` method to apply the noise.
+        # This delegates the actual noising logic (uniform vs. absorbing) to the
+        # appropriate graph object.
+        noisy_tokens = self.graph.sample_transition(original_tokens, corruption_prob)
         
         return noisy_tokens, original_tokens
 
     @torch.no_grad()
-    def remove_noise(self, model: nn.Module, noisy_tokens: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
+    def remove_noise(self, model: nn.Module, noisy_tokens: torch.Tensor, t: torch.Tensor, guidance_scale: float = 1.0) -> torch.Tensor:
         """
-        Denoises the tokens for one timestep using the model's prediction and sampling.
+        Performs one step of the reverse (denoising) process with optional
+        Classifier-Free Guidance (CFG).
 
         Args:
-            model (nn.Module): The Transformer model.
-            noisy_tokens (torch.Tensor): The noisy tokens at the current timestep. Shape: [batch_size, seq_len].
-            t (torch.Tensor): The current timestep. Shape: [batch_size,].
+            model (nn.Module): The trained Transformer model.
+            noisy_tokens (torch.Tensor): The noisy tokens at the current timestep, x_t.
+                                         Shape: [batch_size, seq_len].
+            t (torch.Tensor): The current continuous time value. Shape: [batch_size,].
+            guidance_scale (float): The scale for CFG. A value of 1.0 is standard diffusion,
+                                    while values > 1.0 increase the influence of the
+                                    conditional prediction.
 
         Returns:
-            torch.Tensor: The denoised tokens for the next timestep. Shape: [batch_size, seq_len].
+            torch.Tensor: The partially denoised tokens for the next step, x_{t-1}.
+                          Shape: [batch_size, seq_len].
         """
         model.eval()
         
-        predicted_logits = model(noisy_tokens, t)
-        predicted_probs = F.softmax(predicted_logits, dim=-1)
+        # For CFG, we make two predictions: one conditional and one unconditional
+        conditional_logits = model(noisy_tokens, t, context_mask=None) # Always conditional
+        unconditional_logits = model(noisy_tokens, t, context_mask=torch.ones_like(t).bool()) # Unconditional
         
-        # Sample from the predicted distribution
-        predicted_tokens = torch.multinomial(predicted_probs.view(-1, predicted_probs.size(-1)), 1)
-        predicted_tokens = predicted_tokens.view(noisy_tokens.size())
+        # Combine the logits using the guidance scale
+        # logits = unconditional + scale * (conditional - unconditional)
+        guided_logits = unconditional_logits + guidance_scale * (conditional_logits - unconditional_logits)
+        
+        # Convert logits to probabilities and sample
+        predicted_probs = F.softmax(guided_logits, dim=-1)
+        predicted_tokens = torch.multinomial(
+            predicted_probs.view(-1, predicted_probs.size(-1)), 1
+        ).view(noisy_tokens.size())
 
-        # In the absorbing case, we only replace the [MASK] tokens.
-        # For the uniform case, this logic might need to be adjusted if we want to be more selective.
-        # However, for a general implementation, we can replace all tokens based on the model's prediction.
+        # Decide which tokens to update
         if isinstance(self.graph, AbsorbingGraph):
             mask = (noisy_tokens == self.mask_token_id)
-            denoised_tokens = noisy_tokens.clone()
-            denoised_tokens[mask] = predicted_tokens[mask]
+            denoised_tokens = torch.where(mask, predicted_tokens, noisy_tokens)
         else:
-            # For the uniform graph, every token is potentially changed, so we replace all of them.
             denoised_tokens = predicted_tokens
         
         return denoised_tokens
