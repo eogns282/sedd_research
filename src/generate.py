@@ -43,7 +43,13 @@ def main():
     # --- Diffusion ---
     print("Initializing diffusion process...")
     noise_schedule = get_noise_schedule(config)
-    graph = UniformGraph(config.VOCAB_SIZE)
+    if config.GRAPH_TYPE == "uniform":
+        graph = UniformGraph(config.VOCAB_SIZE)
+    elif config.GRAPH_TYPE == "absorbing":
+        from src.diffusion.graph import AbsorbingGraph
+        graph = AbsorbingGraph(config.VOCAB_SIZE, config.MASK_TOKEN_ID)
+    else:
+        raise ValueError(f"Unknown graph type: {config.GRAPH_TYPE}")
     diffusion_process = DiffusionProcess(noise_schedule, graph, config)
     print("Diffusion process initialized.")
 
