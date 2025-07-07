@@ -1,0 +1,44 @@
+# Configuration for a quick verification test.
+# This uses a small number of epochs and steps to validate the pipeline quickly.
+
+exp_id: "verification_test"
+gpu: 0
+
+dataset:
+  name: "wikitext"
+  config: "wikitext-2-raw-v1"
+  tokenizer: "bert-base-uncased"
+  max_seq_len: 32 # Smaller for speed
+
+model:
+  d_model: 128
+  n_head: 4
+  num_encoder_layers: 2
+  dim_feedforward: 512
+  dropout: 0.1
+
+diffusion:
+  graph_type: "absorbing"
+  num_timesteps: 100 # Fewer steps for speed
+  noise_schedule:
+    name: "geometric"
+    g_min: 0.001
+    g_max: 7.0
+
+training:
+  batch_size: 8
+  learning_rate: 1e-4
+  num_epochs: 1 # Just one epoch
+  grad_clip: 1.0
+  warmup_steps: 10
+  patience: 5
+  unconditional_prob: 0.1
+
+logging:
+  log_interval: 10
+  save_interval: 1
+  checkpoint_dir: "checkpoints"
+
+vocab:
+  size: 30522
+  mask_token_id: 103

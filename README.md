@@ -1,92 +1,75 @@
-# SEDD Research
+# Score-Entropy Discrete Diffusion (SEDD) Research Framework
 
-This repository contains a minimal, research-ready baseline for the paper "Discrete Diffusion Modeling by Estimating the Ratios of the Data Distribution" (SEDD). The goal of this codebase is to provide a clean, modular, and extensible starting point for research on discrete diffusion models for language.
+This repository provides a research-grade framework for experimenting with Score-Entropy Discrete Diffusion models, based on the paper ["Discrete Diffusion Modeling by Estimating the Ratios of the Data Distribution"](https://arxiv.org/abs/2310.16834).
+
+The framework is designed to be clear, extensible, and easy to use for comparing different diffusion strategies (e.g., Uniform vs. Absorbing states) and for exploring new ideas in discrete diffusion.
 
 ## Project Structure
 
-The project is organized into the following directories and files:
-
 ```
 /
-|
-├── src/
-│   ├── configs/
-│   │   └── base_config.py      # All hyperparameters and settings for experiments.
-│   │
-│   ├── diffusion/
-│   │   ├── __init__.py
-│   │   ├── graph.py            # Implements the discrete state graph and transition matrices.
-│   │   ├── noise_schedule.py   # Defines the noise schedules (Geometric, LogLinear).
-│   │   └── diffusion_process.py# Manages the forward (noising) and reverse (sampling) processes.
-│   │
-│   ├── data.py                 # Handles dataset loading (WikiText-2) and preprocessing.
-│   ├── generate.py             # A script to generate samples from a saved model.
-│   ├── losses.py               # Implements the Score-Entropy loss function.
-│   ├── model.py                # The Transformer model architecture.
-│   └── trainer.py              # The main training and evaluation script.
-│
-├── requirements.txt        # The required Python libraries.
-├── run_train.sh            # A shell script to simplify the training process.
-└── setup.py                # The setup script for installing the project as a package.
+├─── checkpoints/      # Saved model checkpoints
+├─── analysis_results/ # Detailed analysis outputs (metrics, samples)
+├─── src/
+│   ├─── data.py         # Data loading and preprocessing
+│   ├─── diffusion/      # Core diffusion logic (process, graphs, schedules)
+│   ├─── model.py        # Transformer model architecture
+│   ├─── utils/
+│   │   └─── config_loader.py # Handles loading YAML configs
+│   ├─── losses.py       # Training loss function
+│   └─── trainer.py      # Main training script
+├─── config.yaml       # Main configuration file for experiments
+├─── run_train.sh      # Example script to start a training run
+├─── run_final_analysis.sh # Runs a full analysis on specified models
+└─── requirements.txt  # Python dependencies
 ```
 
 ## Setup
 
 1.  **Create and activate a conda environment:**
     ```bash
-    conda create -n text-diffusion-poc python=3.9 -y
+    conda create -n text-diffusion-poc python=3.9
     conda activate text-diffusion-poc
     ```
 
-2.  **Install the required libraries:**
+2.  **Install dependencies:**
     ```bash
     pip install -r requirements.txt
     ```
 
-3.  **Install the project in editable mode:**
-    ```bash
-    pip install -e .
-    ```
-
 ## How to Run
 
-### Training
+This framework is configured using `.yaml` files. The main configuration is `config.yaml`. You can create new config files for different experiments.
 
-To start a training run, use the `run_train.sh` script. You can specify the GPU to use by passing the `--gpu` argument. For example, to use GPU 1:
+### 1. Training a Model
 
-```bash
-./run_train.sh --gpu 1
-```
+To train a model, you can use the provided `run_train.sh` script.
 
-The script will:
-1.  Activate the `text-diffusion-poc` conda environment.
-2.  Run the training script located at `src/trainer.py`.
-3.  Load the configuration from `src/configs/base_config.py`.
-4.  Initialize the dataset, model, and diffusion components.
-5.  Run the training loop, logging the training loss to `wandb`.
-6.  After each epoch, it will evaluate the model on the validation set and log the validation loss.
-7.  Save model checkpoints to the `checkpoints/` directory.
+1.  **Edit `config.yaml`** to define your experiment. Key parameters to change include:
+    - `exp_id`: A unique name for your experiment (e.g., `absorbing_v2`).
+    - `gpu`: The GPU index to use.
+    - `diffusion.graph_type`: The main variable for your research (`uniform` or `absorbing`).
+    - Other hyperparameters in the `model`, `diffusion`, and `training` sections.
 
-### Generation
+2.  **Run the training script:**
+    ```bash
+    ./run_train.sh
+    ```
+    The script will use the settings in `config.yaml` to run the training. Checkpoints and logs will be saved to the `checkpoints/` and `wandb/` directories under the `exp_id`.
 
-To generate text from a trained model, run the `generate.py` script:
+### 2. Analyzing a Model
 
-```bash
-python src/generate.py
-```
+Once a model is trained, you can run a comprehensive analysis on it using the `run_final_analysis.sh` script.
 
-This script will:
-1.  Load the latest checkpoint from the `checkpoints/` directory.
-2.  Initialize the model and diffusion process.
-3.  Generate a new text sample using the reverse diffusion process.
-4.  Print the generated text to the console.
+1.  **Edit `run_final_analysis.sh`** to specify the `exp_id` of the model(s) you want to analyze.
 
-## Extending the Codebase for Research
+2.  **Run the analysis script:**
+    ```bash
+    ./run_final_analysis.sh
+    ```
+    This will perform the following analyses:
+    - **Perplexity:** Calculated on the test set.
+    - **Generation Diversity:** Measured with Self-BLEU and Distinct-N metrics.
+    - **Infilling:** Assesses the model's contextual understanding.
 
-This baseline is designed to be easily extensible. Here are some ideas for how you can build upon it for your own research:
-
-*   **Implement the full Score-Entropy loss:** The current `losses.py` uses a simplified version of the Score-Entropy loss. You can implement the full loss function from the paper to get a more faithful reproduction of the SEDD model.
-*   **Experiment with different model architectures:** Modify `src/model.py` to try different Transformer architectures, such as adding more layers, using different attention mechanisms, or exploring entirely new model families.
-*   **Design new noise schedules:** Add new noise schedules to `src/diffusion/noise_schedule.py` and see how they affect the model's performance.
-*   **Explore different graph structures:** The current `src/diffusion/graph.py` uses a simple uniform transition. You can implement other graph structures, such as a masking-based graph or a graph based on word embeddings, to better capture the relationships between tokens.
-*   **Train on larger datasets:** Modify `src/data.py` to use different datasets from the Hugging Face `datasets` library.
+    All results, including generated samples and a YAML summary of metrics, will be saved to the `analysis_results/<your_exp_id>/` directory. This provides a clean and organized way to compare different experiments.

@@ -17,9 +17,9 @@ class WikiTextDataset(Dataset):
             split (str): The dataset split to load (e.g., 'train', 'validation', 'test').
             config (Any): The configuration object with dataset settings.
         """
-        self.dataset = load_dataset(config.DATASET_NAME, config.DATASET_CONFIG, split=split)
-        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-        self.max_len = config.MAX_SEQ_LEN
+        self.dataset = load_dataset(config.dataset.name, config.dataset.config, split=split)
+        self.tokenizer = BertTokenizer.from_pretrained(config.dataset.tokenizer)
+        self.max_len = config.dataset.max_seq_len
 
     def __len__(self) -> int:
         """Returns the number of samples in the dataset."""
@@ -62,7 +62,7 @@ def get_dataloader(split: str, config: Any) -> DataLoader:
     dataset = WikiTextDataset(split, config)
     return DataLoader(
         dataset,
-        batch_size=config.BATCH_SIZE,
+        batch_size=config.training.batch_size,
         shuffle=(split == 'train'),
         num_workers=4,
         pin_memory=True

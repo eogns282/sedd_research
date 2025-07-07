@@ -1,0 +1,4 @@
+--- Evaluation Results ---
+Checkpoint: checkpoints/uniform_experiment_continued/best_checkpoint.pt
+Average Loss: 0.6873
+Perplexity:     1.9884

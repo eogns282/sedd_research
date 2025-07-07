@@ -1,0 +1,89 @@
+# ===================================================================
+#          Default Configuration for SEDD Research
+# ===================================================================
+# This file contains all the hyperparameters and settings for experiments.
+# You can create new .yaml files for different experiments and specify
+# them via the command line.
+
+# --- Experiment Settings ---
+# A unique name for the experiment, used for logging and checkpointing.
+exp_id: "sedd_experiment"
+# The GPU to use for training.
+gpu: 0
+
+# --- Dataset Configuration ---
+dataset:
+  # The name of the dataset to use from the Hugging Face `datasets` library.
+  name: "wikitext"
+  # The specific configuration of the dataset (e.g., 'wikitext-2-raw-v1').
+  config: "wikitext-2-raw-v1"
+  # The name of the tokenizer to use from `transformers`.
+  tokenizer: "bert-base-uncased"
+  # The maximum sequence length for the model.
+  max_seq_len: 128
+
+# --- Model Architecture ---
+model:
+  # The dimensionality of the model's embeddings and hidden states.
+  d_model: 256
+  # The number of attention heads in the Transformer's multi-head attention layers.
+  n_head: 8
+  # The number of Transformer encoder layers.
+  num_encoder_layers: 6
+  # The dimensionality of the feed-forward network inside the Transformer encoder.
+  dim_feedforward: 1024
+  # The dropout rate used in the model.
+  dropout: 0.1
+
+# --- Diffusion Process ---
+diffusion:
+  # The type of graph to use for the diffusion process. Options: "uniform", "absorbing".
+  graph_type: "absorbing"
+  # The total number of discrete timesteps for the reverse process.
+  num_timesteps: 1000
+  # The configuration for the noise schedule.
+  noise_schedule:
+    # The type of noise schedule to use. Options: "geometric", "loglinear".
+    name: "geometric"
+    # The minimum total noise, G(0).
+    g_min: 0.001
+    # The maximum total noise, G(1).
+    g_max: 7.0 # A value of ~7.0 corresponds to a ~99.9% corruption probability
+
+# --- Training ---
+training:
+  # The number of samples per batch.
+  batch_size: 32
+  # The learning rate for the Adam optimizer.
+  learning_rate: 1e-4
+  # The total number of training epochs.
+  num_epochs: 100
+  # The maximum gradient norm for gradient clipping.
+  grad_clip: 1.0
+  # The number of warmup steps for the learning rate scheduler.
+  warmup_steps: 1000
+  # The number of epochs to wait for validation loss to improve before stopping.
+  patience: 5
+  # --- Classifier-Free Guidance (CFG) ---
+  # The probability of dropping the context during training to enable CFG.
+  # 0.0 means no CFG, 0.1 means 10% of samples are trained unconditionally.
+  unconditional_prob: 0.1
+
+
+# --- Logging and Saving ---
+logging:
+  # The interval (in steps) at which to log training progress.
+  log_interval: 100
+  # The interval (in epochs) at which to save a model checkpoint.
+  save_interval: 1
+  # The directory where model checkpoints will be saved.
+  checkpoint_dir: "checkpoints"
+
+# --- Vocabulary and Special Tokens ---
+# These are derived from the tokenizer and should not be changed manually
+# unless you are using a custom vocabulary.
+vocab:
+  # The size of the vocabulary. For BERT, this is typically 30522.
+  size: 30522
+  # The token ID to use for the absorbing state ([MASK] token).
+  mask_token_id: 103

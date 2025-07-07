@@ -1,0 +1,4 @@
+--- Evaluation Results ---
+Checkpoint: checkpoints/absorbing_experiment_continued/best_checkpoint.pt
+Average Loss: 0.5009
+Perplexity:     1.6502

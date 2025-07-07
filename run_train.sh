@@ -1,18 +1,20 @@
 #!/bin/bash
+# A simple script to run the training process.
 
-# This script handles the setup and execution of the training process.
+# This script trains a model using the settings defined in the specified
+# YAML configuration file.
 
-# Exit immediately if a command exits with a non-zero status.
-set -e
+# It's recommended to copy and modify this script for different experiments.
+# For example, you could create 'train_uniform.sh' and 'train_absorbing.sh'
+# and point them to different config files or override parameters.
 
-# Find the base directory of the conda installation and source the conda shell functions
-CONDA_BASE=$(conda info --base)
-source "$CONDA_BASE/etc/profile.d/conda.sh"
+export PYTHONPATH=$PYTHONPATH:.
+export TOKENIZERS_PARALLELISM=false
 
-# Activate the correct conda environment
-conda activate text-diffusion-poc
+echo "======================================================"
+echo "           STARTING TRAINING RUN"
+echo "======================================================"
 
-# Run the training script as a module, passing all command-line arguments to it
-# This allows you to specify the GPU, e.g., ./run_train.sh --gpu 1
-echo "Starting SEDD training..."
-python -m src.trainer "$@"
+python src/trainer.py --config config.yaml
+
+echo "\n--- Training complete ---"
