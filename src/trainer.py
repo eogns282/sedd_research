@@ -20,13 +20,15 @@ def main(args):
     model initialization, training, validation, and checkpointing.
     """
     # --- Setup ---
+    checkpoint_dir = os.path.join(config.CHECKPOINT_DIR, args.exp_id)
     device = torch.device(f"cuda:{args.gpu}" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
-    os.makedirs(config.CHECKPOINT_DIR, exist_ok=True)
+    os.makedirs(checkpoint_dir, exist_ok=True)
 
     # --- Wandb ---
     wandb.init(
         project="sedd-research",
+        name=args.exp_id,
         config={k: v for k, v in config.__dict__.items() if not k.startswith('__')}
     )
 
@@ -46,7 +48,13 @@ def main(args):
     # --- Diffusion ---
     print("Initializing diffusion process...")
     noise_schedule = get_noise_schedule(config)
-    graph = UniformGraph(config.VOCAB_SIZE)
+    if args.graph_type == "uniform":
+        graph = UniformGraph(config.VOCAB_SIZE)
+    elif args.graph_type == "absorbing":
+        from src.diffusion.graph import AbsorbingGraph
+        graph = AbsorbingGraph(config.VOCAB_SIZE, config.MASK_TOKEN_ID)
+    else:
+        raise ValueError(f"Unknown graph type: {args.graph_type}")
     diffusion_process = DiffusionProcess(noise_schedule, graph, config)
     loss_fn = get_loss_fn(config)
     print("Diffusion process initialized.")
@@ -86,7 +94,7 @@ def main(args):
 
         # --- Save Checkpoint ---
         if (epoch + 1) % config.SAVE_INTERVAL == 0:
-            checkpoint_path = os.path.join(config.CHECKPOINT_DIR, f"checkpoint_epoch_{epoch+1}.pt")
+            checkpoint_path = os.path.join(checkpoint_dir, f"checkpoint_epoch_{epoch+1}.pt")
             torch.save({
                 'epoch': epoch,
                 'model_state_dict': model.state_dict(),
@@ -99,5 +107,7 @@ def main(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--gpu", type=int, default=0, help="GPU to use for training.")
+    parser.add_argument("--exp_id", type=str, required=True, help="Unique experiment ID.")
+    parser.add_argument("--graph_type", type=str, default=config.GRAPH_TYPE, choices=["uniform", "absorbing"], help="The type of graph to use for the diffusion process.")
     args = parser.parse_args()
     main(args)

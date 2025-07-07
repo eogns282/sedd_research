@@ -25,6 +25,11 @@ DIM_FEEDFORWARD: int = 1024
 DROPOUT: float = 0.1
 
 # --- Diffusion Process ---
+# The type of graph to use for the diffusion process. Options: "uniform", "absorbing".
+GRAPH_TYPE: str = "uniform"
+# The token ID to use for the absorbing state. Typically, this is a [MASK] token.
+# For BERT, the [MASK] token ID is 103.
+MASK_TOKEN_ID: int = 103
 # The total number of diffusion timesteps.
 NUM_TIMESTEPS: int = 1000
 # The type of noise schedule to use. Options: "geometric", "loglinear".

@@ -1,32 +1,31 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Any, Tuple
+from typing import Any, Tuple, Union
 from .noise_schedule import NoiseSchedule
-from .graph import UniformGraph
+from .graph import UniformGraph, AbsorbingGraph
 
 class DiffusionProcess:
     """
     Manages the forward (noising) and reverse (sampling) diffusion processes.
     """
-    def __init__(self, noise_schedule: NoiseSchedule, graph: UniformGraph, config: Any):
+    def __init__(self, noise_schedule: NoiseSchedule, graph: Union[UniformGraph, AbsorbingGraph], config: Any):
         """
         Initializes the diffusion process.
 
         Args:
             noise_schedule (NoiseSchedule): The noise schedule to use.
-            graph (UniformGraph): The discrete state graph.
+            graph (Union[UniformGraph, AbsorbingGraph]): The discrete state graph.
             config (Any): The configuration object.
         """
         self.noise_schedule = noise_schedule
         self.graph = graph
         self.num_timesteps = config.NUM_TIMESTEPS
-        self.mask_token_id = 103  # [MASK] token id for bert-base-uncased
+        self.mask_token_id = config.MASK_TOKEN_ID
 
     def add_noise(self, original_tokens: torch.Tensor, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Corrupts the tokens using a mask-based approach, which is a simplified
-        version of the SEDD forward process.
+        Corrupts the tokens using the graph's transition sampler.
 
         Args:
             original_tokens (torch.Tensor): The original tokens x_0. Shape: [batch_size, seq_len].
@@ -36,19 +35,7 @@ class DiffusionProcess:
             Tuple[torch.Tensor, torch.Tensor]: A tuple containing the noisy tokens and the original tokens.
         """
         total_noise = self.noise_schedule.total(t)
-        corruption_prob = 1.0 - torch.exp(-total_noise)
-        corruption_prob = corruption_prob.view(-1, 1)
-
-        corruption_mask = torch.rand_like(original_tokens.float()) < corruption_prob
-        
-        # Don't corrupt special tokens ([CLS], [SEP], [PAD])
-        corruption_mask[:, 0] = False
-        sep_indices = (original_tokens == 102).max(dim=1).indices
-        for i in range(original_tokens.size(0)):
-            corruption_mask[i, sep_indices[i]:] = False
-
-        noisy_tokens = original_tokens.clone()
-        noisy_tokens[corruption_mask] = self.mask_token_id
+        noisy_tokens = self.graph.sample_transition(original_tokens, total_noise)
         
         return noisy_tokens, original_tokens
 
@@ -74,9 +61,15 @@ class DiffusionProcess:
         predicted_tokens = torch.multinomial(predicted_probs.view(-1, predicted_probs.size(-1)), 1)
         predicted_tokens = predicted_tokens.view(noisy_tokens.size())
 
-        # Only replace the [MASK] tokens
-        mask = (noisy_tokens == self.mask_token_id)
-        denoised_tokens = noisy_tokens.clone()
-        denoised_tokens[mask] = predicted_tokens[mask]
+        # In the absorbing case, we only replace the [MASK] tokens.
+        # For the uniform case, this logic might need to be adjusted if we want to be more selective.
+        # However, for a general implementation, we can replace all tokens based on the model's prediction.
+        if isinstance(self.graph, AbsorbingGraph):
+            mask = (noisy_tokens == self.mask_token_id)
+            denoised_tokens = noisy_tokens.clone()
+            denoised_tokens[mask] = predicted_tokens[mask]
+        else:
+            # For the uniform graph, every token is potentially changed, so we replace all of them.
+            denoised_tokens = predicted_tokens
         
         return denoised_tokens
