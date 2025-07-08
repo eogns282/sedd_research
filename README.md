@@ -40,7 +40,7 @@ The framework is designed to be clear, extensible, and easy to use for comparing
 
 ## How to Run Experiments
 
-This framework is configured using `.yaml` files. We provide `uniform_config.yaml` and `absorbing_config.yaml` as starting points.
+This framework is configured using `.yaml` files. The primary models are the original `Absorbing` model and the new state-of-the-art `Gated-Absorbing` model.
 
 ### 1. Verifying the Framework
 
@@ -49,24 +49,22 @@ Before running long experiments, you can run a quick verification test to ensure
 ./run_verification_test.sh
 ```
 
-### 2. Running the Full Experiment Pipeline
+### 2. Reproducing the Final Results
 
-The main script for reproducing the core results is `run_final_experiments.sh`. This script will:
-1.  Train the **Uniform** model from scratch using `uniform_config.yaml`.
-2.  Train the **Absorbing** model from scratch using `absorbing_config.yaml`.
-3.  Run a full analysis (perplexity, diversity, infilling) on the best checkpoint of each model.
-
-To run the entire pipeline, simply execute:
+To train and evaluate the final, best-performing model, use the `run_gated_absorbing_experiment.sh` script. This will train the model from scratch and run a full analysis.
 ```bash
-./run_final_experiments.sh
+./run_gated_absorbing_experiment.sh
 ```
+This script uses the `gated_absorbing_config.yaml` file.
+
+To compare this to the original baselines, you can still use the `run_final_experiments.sh` script, which trains the original `Uniform` and `Absorbing` models.
 
 ### 3. Analyzing Results
 
-After the final experiments are complete, all quantitative and qualitative results will be saved in the `analysis_results/` directory, under the `exp_id` specified in the config files (`final_uniform` and `final_absorbing`).
+After the experiments are complete, all results will be saved in the `analysis_results/` directory under their respective `exp_id`s.
 
-You can directly compare the summary files:
-- `analysis_results/final_uniform/summary.yaml`
+You can compare the summary files:
 - `analysis_results/final_absorbing/summary.yaml`
+- `analysis_results/final_gated_absorbing/summary.yaml`
 
-This provides a clean and organized way to compare the performance of the two models.
+This provides a clean and organized way to compare the performance of the models.

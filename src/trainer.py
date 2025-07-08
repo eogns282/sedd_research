@@ -28,7 +28,7 @@ from src.data import get_dataloader
 from src.model import TransformerModel
 from src.diffusion.diffusion_process import DiffusionProcess
 from src.diffusion.noise_schedule import get_noise_schedule
-from src.diffusion.graph import UniformGraph, AbsorbingGraph
+from src.diffusion.graph import UniformGraph, AbsorbingGraph, HybridGraph
 from src.losses import get_loss_fn
 
 def main(debug: bool = False):
@@ -74,6 +74,8 @@ def main(debug: bool = False):
         graph = UniformGraph(config.vocab.size)
     elif config.diffusion.graph_type == "absorbing":
         graph = AbsorbingGraph(config.vocab.size, config.vocab.mask_token_id)
+    elif config.diffusion.graph_type == "hybrid":
+        graph = HybridGraph(config.vocab.size, config.vocab.mask_token_id, config.diffusion.mask_ratio)
     else:
         raise ValueError(f"Unknown graph type: {config.diffusion.graph_type}")
         

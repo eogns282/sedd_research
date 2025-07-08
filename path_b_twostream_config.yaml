@@ -1,0 +1,46 @@
+# Configuration for Idea 4: Gated-Hybrid Model
+
+exp_id: "path_b_twostream"
+gpu: 4 # Assigning to GPU 0
+
+dataset:
+  name: "wikitext"
+  config: "wikitext-2-raw-v1"
+  tokenizer: "bert-base-uncased"
+  max_seq_len: 128
+
+model:
+  d_model: 256
+  n_head: 8
+  num_encoder_layers: 6
+  dim_feedforward: 1024
+  dropout: 0.1
+  use_gated_attention: true
+
+diffusion:
+  graph_type: "hybrid"
+  mask_ratio: 0.75
+  num_timesteps: 1000
+  noise_schedule:
+    name: "geometric"
+    g_min: 0.001
+    g_max: 7.0
+
+training:
+  batch_size: 32
+  learning_rate: 1e-4
+  num_epochs: 100
+  grad_clip: 1.0
+  warmup_steps: 1000
+  patience: 5
+  unconditional_prob: 0.1
+  gate_loss_weight: 0.1
+
+logging:
+  log_interval: 100
+  save_interval: 1
+  checkpoint_dir: "checkpoints"
+
+vocab:
+  size: 30522
+  mask_token_id: 103
