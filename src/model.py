@@ -118,7 +118,19 @@ class TransformerModel(nn.Module):
         )
         self.output_layer = nn.Linear(self.d_model, config.vocab.size)
 
-    def forward(self, src: torch.Tensor, t: torch.Tensor, context_mask: torch.Tensor = None) -> torch.Tensor:
+        # --- Oracle-specific Layer ---
+        # If the config enables the corruption oracle, we add an embedding layer
+        # that will learn to represent the "is_corrupted" boolean information.
+        self.use_corruption_oracle = getattr(config.model, 'use_corruption_oracle', False)
+        if self.use_corruption_oracle:
+            self.corruption_embedding = nn.Embedding(2, self.d_model)
+
+        # --- Gated Attention Mechanism (Idea 2) ---
+        self.use_gated_attention = getattr(config.model, 'use_gated_attention', False)
+        if self.use_gated_attention:
+            self.gate_predictor = nn.Linear(self.d_model, 1)
+
+    def forward(self, src: torch.Tensor, t: torch.Tensor, context_mask: torch.Tensor = None, corruption_mask: torch.Tensor = None) -> torch.Tensor:
         """
         Defines the forward pass of the model.
 
@@ -126,9 +138,13 @@ class TransformerModel(nn.Module):
             src (torch.Tensor): The input sequence of noisy token IDs.
             t (torch.Tensor): The continuous time values for each sequence.
             context_mask (torch.Tensor, optional): A boolean mask for CFG.
+            corruption_mask (torch.Tensor, optional): A boolean mask indicating
+                                                      which tokens are noise.
+                                                      Used only by the Oracle model.
 
         Returns:
             torch.Tensor: The predicted logits over the vocabulary for each token.
+                          If using gated attention, also returns the gate scores.
         """
         if context_mask is not None:
             mask_tokens = torch.full_like(src, self.config.vocab.mask_token_id)
@@ -137,8 +153,25 @@ class TransformerModel(nn.Module):
         token_emb = self.token_embedding(src) * math.sqrt(self.d_model)
         pos_encoded_emb = self.pos_encoder(token_emb)
         time_emb = self.time_embedding(t).unsqueeze(1)
-        x = pos_encoded_emb + time_emb
-        transformer_output = self.transformer_encoder(x)
-        logits = self.output_layer(transformer_output)
         
-        return logits
+        # Combine the base embeddings
+        x = pos_encoded_emb + time_emb
+
+        # --- Oracle Logic ---
+        # If this is the oracle model and the corruption mask is provided,
+        # we create an embedding from the mask and add it to the input.
+        if self.use_corruption_oracle and corruption_mask is not None:
+            corruption_emb = self.corruption_embedding(corruption_mask.long())
+            x = x + corruption_emb
+
+        transformer_output = self.transformer_encoder(x)
+
+        # --- Gated Attention Logic ---
+        if self.use_gated_attention:
+            gate_logits = self.gate_predictor(transformer_output) # Raw logits
+            gated_output = transformer_output * torch.sigmoid(gate_logits) # Apply sigmoid here for gating
+            logits = self.output_layer(gated_output)
+            return logits, gate_logits.squeeze(-1) # Return raw logits for stable loss
+        else:
+            logits = self.output_layer(transformer_output)
+            return logits

@@ -88,7 +88,7 @@ def calculate_perplexity(model, config, device):
         for batch in tqdm(test_loader, desc="Evaluating Perplexity"):
             batch = batch.to(device)
             # The loss function expects a batch of clean data
-            loss = loss_fn(model, batch, diffusion_process)
+            loss = loss_fn(model, batch, diffusion_process, analysis_mode=True)
             total_loss += loss.item() * batch.size(0)
             total_samples += batch.size(0)
             

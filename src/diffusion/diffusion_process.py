@@ -41,7 +41,7 @@ class DiffusionProcess:
         self.num_timesteps = diffusion_config.num_timesteps
         self.mask_token_id = vocab_config.mask_token_id
 
-    def add_noise(self, original_tokens: torch.Tensor, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+    def add_noise(self, original_tokens: torch.Tensor, t: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """
         Performs the forward process to corrupt clean tokens into noisy tokens.
 
@@ -62,6 +62,11 @@ class DiffusionProcess:
             - original_tokens (torch.Tensor): The original tokens, passed through for
                                               convenience in loss calculation.
                                               Shape: [batch_size, seq_len].
+            - corruption_mask (torch.Tensor or None): A boolean mask indicating
+                                                      which tokens were corrupted.
+                                                      Shape: [batch_size, seq_len].
+                                                      Returns None if the graph is not
+                                                      the UniformGraph.
         """
         # 1. Get the total noise G(t) from the schedule for the given timesteps.
         total_noise = self.noise_schedule.total(t)
@@ -74,9 +79,9 @@ class DiffusionProcess:
         # 3. Use the graph's `sample_transition` method to apply the noise.
         # This delegates the actual noising logic (uniform vs. absorbing) to the
         # appropriate graph object.
-        noisy_tokens = self.graph.sample_transition(original_tokens, corruption_prob)
+        noisy_tokens, corruption_mask = self.graph.sample_transition(original_tokens, corruption_prob)
         
-        return noisy_tokens, original_tokens
+        return noisy_tokens, original_tokens, corruption_mask
 
     @torch.no_grad()
     def remove_noise(self, model: nn.Module, noisy_tokens: torch.Tensor, t: torch.Tensor, guidance_scale: float = 1.0) -> torch.Tensor:
@@ -100,8 +105,16 @@ class DiffusionProcess:
         model.eval()
         
         # For CFG, we make two predictions: one conditional and one unconditional
-        conditional_logits = model(noisy_tokens, t, context_mask=None) # Always conditional
-        unconditional_logits = model(noisy_tokens, t, context_mask=torch.ones_like(t).bool()) # Unconditional
+        conditional_output = model(noisy_tokens, t, context_mask=None) # Always conditional
+        unconditional_output = model(noisy_tokens, t, context_mask=torch.ones_like(t).bool()) # Unconditional
+        
+        # Handle tuple output from gated attention model
+        if isinstance(conditional_output, tuple):
+            conditional_logits = conditional_output[0]
+            unconditional_logits = unconditional_output[0]
+        else:
+            conditional_logits = conditional_output
+            unconditional_logits = unconditional_output
         
         # Combine the logits using the guidance scale
         # logits = unconditional + scale * (conditional - unconditional)

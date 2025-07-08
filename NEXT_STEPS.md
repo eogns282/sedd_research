@@ -1,71 +1,47 @@
-# Project Handoff & Next Steps
+# Project Handoff & Next Steps: Improving the Uniform Diffusion Model
 
 ## 1. Project Overview & Current State
 
-This repository contains a robust, verified, and well-documented research framework for experimenting with Score-Entropy Discrete Diffusion (SEDD) models.
+This repository contains a robust, verified, and well-documented research framework for comparing **Uniform** and **Absorbing** state discrete diffusion models. The codebase is stable and all previous bugs have been resolved.
 
-- **Core Implementation:** A faithful implementation of the models described in the SEDD paper, including both **Uniform** and **Absorbing** state diffusion processes.
-- **Configuration:** All experiments are managed via `.yaml` files (`uniform_config.yaml`, `absorbing_config.yaml`). The main entry points are `run_train.sh` and `run_final_analysis.sh`.
-- **Verified Functionality:** The entire pipeline, from training to analysis, has been verified and is known to be in a good, stable state. All previous bugs have been fixed.
-- **Classifier-Free Guidance (CFG):** The framework includes a full implementation of CFG, allowing for research into controllable and guided generation.
+## 2. Summary of Key Findings & The Core Research Problem
 
-## 2. Summary of Key Findings
+Our initial experiments have definitively shown that the **Absorbing state model significantly outperforms the Uniform state model**, particularly in quantitative perplexity and qualitative contextual tasks like infilling.
 
-Our initial experiments have produced a clear and definitive result:
+This leads to our central research question: **Why does the Uniform model struggle, and how can we improve it?**
 
-**The Absorbing state model is unequivocally superior to the Uniform state model across all key metrics.**
+**Our primary hypothesis was that the Uniform model's main difficulty is *noise ambiguity*.** In the Absorbing model, the `[MASK]` token provides a clear, unambiguous signal of which parts of the input are noise. In the Uniform model, any token could be either original data or random noise, making the learning problem for the denoising model much more difficult.
 
-1.  **Quantitative Performance:** The Absorbing model achieves a lower (better) perplexity on the test set, indicating a more accurate language model.
-2.  **Generation Quality:** The Absorbing model produces text that is significantly more diverse and coherent.
-3.  **Contextual Understanding:** The Absorbing model excels at infilling (filling in masked text), a critical task that the Uniform model fails completely. This demonstrates its superior ability to learn and use context.
+## 3. The "Oracle" Experiment: A Surprising Result
 
-These findings strongly suggest that the **Absorbing state model should be the primary focus of future research**.
+To test our hypothesis, we conducted an "oracle" experiment where we gave the Uniform model perfect information about which tokens were noise during training. The results were unexpected:
 
-## 3. Primary Research Goal
+-   **Perplexity:** The `UniformOracle` model's perplexity was not significantly better than the standard `Uniform` model, and was still much worse than the `Absorbing` model.
+-   **Diversity:** The oracle model *did* show a significant improvement in sample diversity.
+-   **Infilling:** The oracle model completely failed at infilling, just like the standard `Uniform` model.
 
-The central research goal is to investigate and understand the properties of the "latent space" in discrete diffusion, particularly for the high-performing Absorbing state model. The key questions are:
+**Conclusion:** This experiment strongly suggests that **noise ambiguity is NOT the primary reason for the Uniform model's failure.** The core problem seems to be more fundamental to the uniform noising process itself. Even when the model knows exactly which tokens to fix, it cannot learn to do so effectively in a contextual manner.
 
-- **How can we leverage the model's learned reverse trajectory for controllable text generation?**
-- **How does Classifier-Free Guidance (CFG) affect the quality, diversity, and controllability of the output?**
-- **Can we develop new methods for guiding the generation process beyond simple infilling?**
+## 4. New Research Direction: Hybrid Diffusion
 
-## 4. Detailed Roadmap for the Next Agent
+The failure of the oracle experiment means that our original plan (Step 3: Predictive Model) is no longer viable. A new approach is needed.
 
-To achieve the research goal, here is a step-by-step plan for the next coding agent.
+Our new hypothesis is that the **Absorbing model's strength comes from its explicit `[MASK]` token**, which provides a strong, structural signal for the model to learn from. The Uniform model's weakness is the lack of such a signal.
 
-### Step 1: Explore Classifier-Free Guidance (CFG)
+Therefore, the new research goal is to **develop a hybrid diffusion model** that combines the uniform noising strategy with an explicit mask signal.
 
-The immediate next step is to use the already-implemented CFG functionality to explore its effects.
+### Step 1 (Immediate Task): Implement a `HybridGraph`
 
-- **Action:** Modify the `run_final_analysis.sh` script to run the analysis on the `final_absorbing` model with different values for the `--guidance_scale` parameter.
-- **Experiment Plan:**
-    - Run the analysis for `guidance_scale` values of `1.0` (the default), `1.5`, `2.0`, and `3.0`.
-    - For each run, focus on the **infilling** and **diversity** analysis parts.
-- **Expected Outcome:** A set of output files in `analysis_results/final_absorbing/` that show how increasing the guidance scale impacts the coherence of the infilled text and the diversity of the generated samples. This will be the first direct insight into controllability.
+-   **Action:** Create a new graph type, `HybridGraph`, in `src/diffusion/graph.py`.
+-   **Implementation Details:**
+    -   The `HybridGraph`'s `sample_transition` method will take a new parameter, `mask_ratio` (e.g., 0.5).
+    -   When adding noise, it will randomly select a portion of the tokens to corrupt based on the `corruption_prob`.
+    -   Of the selected tokens, it will apply **absorbing noise** (replace with `[MASK]`) to a fraction of them determined by `mask_ratio`, and **uniform noise** (replace with a random token) to the rest.
+    -   This will create a noisy sample that contains a mix of original tokens, `[MASK]` tokens, and random noise tokens.
 
-### Step 2: Implement a Dedicated Generation Script
+### Step 2: Train and Analyze the Hybrid Model
 
-The `analyze_models.py` script is good for evaluation, but a dedicated `generate.py` script is needed for more flexible, prompt-based generation.
+-   **Action:** Create a `hybrid_config.yaml` and a `run_hybrid_experiment.sh` script.
+-   **Analysis:** Train the `HybridGraph` model with different `mask_ratio` values (e.g., 0.25, 0.5, 0.75) and compare the results to the `final_uniform` and `final_absorbing` baselines. This will allow us to see how the ratio of absorbing to uniform noise affects performance.
 
-- **Action:** Create a new script, `src/generate.py`.
-- **Features:**
-    - It should load a trained model from a checkpoint (e.g., `checkpoints/final_absorbing/best_checkpoint.pt`).
-    - It should take a command-line argument for a **text prompt**.
-    - It should take an argument for `--guidance_scale`.
-    - **Logic:** The script will use the prompt to create a starting `x_t` state (e.g., by taking the prompt and padding it with `[MASK]` tokens) and then use the `remove_noise` function to generate a completion, guided by the prompt and the CFG scale.
-
-### Step 3: Investigate Advanced Guidance Techniques
-
-Once basic prompting is established, the next step is to explore more advanced ways to guide the generation.
-
-- **Action:** Extend the `generate.py` script to support more complex guidance strategies.
-- **Potential Ideas:**
-    - **Part-of-Speech (POS) Guidance:** Can we guide the model to generate a sentence with a specific grammatical structure (e.g., Noun-Verb-Adjective-Noun)? This would involve creating a "guidance model" that penalizes generations that don't match the target POS sequence.
-    - **Sentiment Guidance:** Can we guide the model to produce text with a positive or negative sentiment? This could be done by using a pre-trained sentiment classifier to guide the diffusion process.
-    - **Length Guidance:** Can we control the length of the generated output more explicitly?
-
-### Step 4: Summarize and Report Findings
-
-- **Action:** After each major step, the agent should summarize its findings in a clear, concise report, similar to the one generated at the end of the initial development phase. This will ensure the research is well-documented and the project's progress is tracked effectively.
-
-This roadmap provides a clear and logical path forward. The codebase is stable and ready for these next steps. Good luck.
+This new direction is a direct response to the experimental evidence from the oracle experiment and provides a clear path forward for improving the Uniform diffusion model.

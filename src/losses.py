@@ -12,6 +12,7 @@ achieved by:
 """
 
 import torch
+import wandb
 from typing import Any, Callable
 
 from src.diffusion.diffusion_process import DiffusionProcess
@@ -31,7 +32,7 @@ def get_loss_fn(config: Any) -> Callable[[TransformerModel, torch.Tensor, Diffus
         Callable: The actual loss function to be used in the training loop.
     """
     
-    def loss_fn(model: TransformerModel, batch: torch.Tensor, diffusion_process: DiffusionProcess) -> torch.Tensor:
+    def loss_fn(model: TransformerModel, batch: torch.Tensor, diffusion_process: DiffusionProcess, analysis_mode: bool = False) -> torch.Tensor:
         """
         Calculates the training loss for a single batch of data.
 
@@ -56,8 +57,8 @@ def get_loss_fn(config: Any) -> Callable[[TransformerModel, torch.Tensor, Diffus
 
         # --- Step 2: Create the noisy input (x_t) ---
         # Use the diffusion process to add the appropriate amount of noise for the
-        # sampled timesteps `t`.
-        noisy_batch, _ = diffusion_process.add_noise(batch, t)
+        # sampled timesteps `t`. This now also returns the corruption mask for the oracle.
+        noisy_batch, _, corruption_mask = diffusion_process.add_noise(batch, t)
 
         # --- Step 3: Get the model's prediction ---
         # The model takes the noisy batch and the continuous time `t` as input.
@@ -66,12 +67,23 @@ def get_loss_fn(config: Any) -> Callable[[TransformerModel, torch.Tensor, Diffus
         # For Classifier-Free Guidance, we randomly drop the context (the noisy input)
         # with a certain probability and train the model on an unconditional objective.
         context_mask = torch.rand(batch.shape[0], device=batch.device) > config.training.unconditional_prob
-        predicted_logits = model(noisy_batch, t, context_mask=context_mask)
+        
+        # The corruption_mask is passed to the model, which will only use it if it's
+        # the UniformOracle variant.
+        model_output = model(
+            noisy_batch, 
+            t, 
+            context_mask=context_mask, 
+            corruption_mask=corruption_mask
+        )
 
         # --- Step 4: Calculate the loss ---
-        # We delegate the final loss calculation to the graph object. In our baseline,
-        # this is a simple cross-entropy loss, which is a standard and effective
-        # objective for training a model to predict the original tokens.
+        use_gated_attention = getattr(config.model, 'use_gated_attention', False)
+        if use_gated_attention:
+            predicted_logits, gate_scores = model_output
+        else:
+            predicted_logits = model_output
+
         # The `sigma` and `noisy_batch` are passed for API consistency, even if
         # unused by the simplified loss.
         sigma = diffusion_process.noise_schedule.total(t)
@@ -82,8 +94,56 @@ def get_loss_fn(config: Any) -> Callable[[TransformerModel, torch.Tensor, Diffus
             x_0=batch
         )
 
-        # --- Step 5: Return the final mean loss ---
-        # We take the mean of the loss across all tokens and all sequences in the batch.
-        return loss_per_token.mean()
+        # --- Step 5: Calculate and Log Component Losses ---
+        # This is the core of the experiment for Hypothesis 1.
+        # We separate the loss based on whether the token was corrupted or not.
+        if corruption_mask is not None and not analysis_mode:
+            loss_corrupted = (loss_per_token * corruption_mask).sum() / corruption_mask.sum()
+            loss_uncorrupted = (loss_per_token * ~corruption_mask).sum() / (~corruption_mask).sum()
+            
+            wandb.log({
+                "loss_corrupted": loss_corrupted.item(),
+                "loss_uncorrupted": loss_uncorrupted.item()
+            })
+
+        # --- Step 6: Return the final mean loss ---
+        # Default behavior: standard cross-entropy
+        final_loss = loss_per_token.mean()
+
+        # Idea 1: Apply Dual-Channel Loss weighting
+        loss_weight = getattr(config.training, 'loss_corrupted_weight', 1.0)
+        if loss_weight > 1.0 and corruption_mask is not None:
+            weights = torch.ones_like(loss_per_token)
+            weights[corruption_mask] = loss_weight
+            final_loss = (loss_per_token * weights).mean()
+
+        # Idea 2: Add Gated Attention loss
+        if use_gated_attention and corruption_mask is not None:
+            gate_logits = gate_scores # Rename for clarity, these are logits now
+            
+            use_soft_gate_loss = getattr(config.training, 'use_soft_gate_loss', False)
+            if use_soft_gate_loss:
+                # Create soft labels for the gate loss
+                gate_targets = torch.ones_like(corruption_mask, dtype=torch.float)
+                # Get the uniform noise mask (corrupted but not masked)
+                uniform_noise_mask = corruption_mask & (noisy_batch != config.vocab.mask_token_id)
+                
+                gate_targets[noisy_batch == config.vocab.mask_token_id] = 0.0
+                gate_targets[uniform_noise_mask] = config.training.gate_loss_uniform_target
+
+            else:
+                # Original hard labels
+                gate_targets = corruption_mask.float()
+
+            gate_loss_fn = torch.nn.BCEWithLogitsLoss()
+            gate_loss = gate_loss_fn(gate_logits, gate_targets)
+            
+            if not analysis_mode:
+                wandb.log({"gate_loss": gate_loss.item()})
+            
+            gate_weight = getattr(config.training, 'gate_loss_weight', 0.1)
+            final_loss = final_loss + gate_weight * gate_loss
+
+        return final_loss
 
     return loss_fn
