@@ -23,7 +23,7 @@ class UniformGraph:
     in the vocabulary with equal probability. This is conceptually similar to
     adding uniform noise to the one-hot representation of the tokens.
     """
-    def __init__(self, vocab_size: int):
+    def __init__(self, vocab_size: int, **kwargs):
         """
         Initializes the UniformGraph.
 
@@ -111,6 +111,50 @@ class UniformGraph:
         return loss.view(x_0.shape)
 
 
+class FrequencyGraph(UniformGraph):
+    """
+    Implements a frequency-aware discrete state graph.
+
+    This is a variation of the UniformGraph. Instead of sampling replacement tokens
+    from a uniform distribution, it samples from the actual token frequency
+    distribution of the training data. This creates more "plausible" noise.
+    """
+    def __init__(self, vocab_size: int, token_distribution: torch.Tensor, device: torch.device, **kwargs):
+        """
+        Initializes the FrequencyGraph.
+
+        Args:
+            vocab_size (int): The total number of tokens in the vocabulary.
+            token_distribution (torch.Tensor): A 1D tensor of shape [vocab_size]
+                                               representing the token probabilities.
+            device (torch.device): The device to place tensors on.
+        """
+        super().__init__(vocab_size)
+        self.token_distribution = token_distribution.to(device)
+        self.device = device
+
+    def sample_transition(self, x_0: torch.Tensor, p: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Samples a noisy state x_t using frequency-aware noise.
+        """
+        batch_size, seq_len = x_0.shape
+        p = p.view(batch_size, 1)
+
+        corrupt_mask = torch.rand(batch_size, seq_len, device=self.device) < p
+
+        # Sample from the provided token distribution
+        num_corrupted = corrupt_mask.sum()
+        corrupted_tokens_flat = torch.multinomial(
+            self.token_distribution, num_samples=num_corrupted, replacement=True
+        )
+        
+        corrupted_tokens = torch.zeros_like(x_0, device=self.device)
+        corrupted_tokens[corrupt_mask] = corrupted_tokens_flat
+
+        noisy_tokens = torch.where(corrupt_mask, corrupted_tokens, x_0)
+        return noisy_tokens, corrupt_mask
+
+
 class AbsorbingGraph:
     """
     Implements an absorbing discrete state graph for the diffusion process.
@@ -119,7 +163,7 @@ class AbsorbingGraph:
     transition to a single, special "absorbing" state (the [MASK] token).
     Once a token is absorbed, it cannot transition to any other state.
     """
-    def __init__(self, vocab_size: int, mask_token_id: int):
+    def __init__(self, vocab_size: int, mask_token_id: int, **kwargs):
         """
         Initializes the AbsorbingGraph.
 
@@ -206,7 +250,7 @@ class HybridGraph:
     the corrupted tokens are replaced by the [MASK] token, while the rest are
     replaced by random tokens from the vocabulary.
     """
-    def __init__(self, vocab_size: int, mask_token_id: int, mask_ratio: float):
+    def __init__(self, vocab_size: int, mask_token_id: int, mask_ratio: float, **kwargs):
         """
         Initializes the HybridGraph.
 
@@ -265,3 +309,49 @@ class HybridGraph:
             reduction='none'
         )
         return loss.view(x_0.shape)
+
+
+class FrequencyHybridGraph(HybridGraph):
+    """
+    Implements a hybrid graph that uses frequency-aware noise for the uniform part.
+    """
+    def __init__(self, vocab_size: int, mask_token_id: int, mask_ratio: float, token_distribution: torch.Tensor, device: torch.device, **kwargs):
+        """
+        Initializes the FrequencyHybridGraph.
+        """
+        super().__init__(vocab_size, mask_token_id, mask_ratio)
+        self.token_distribution = token_distribution.to(device)
+        self.device = device
+
+    def sample_transition(self, x_0: torch.Tensor, p: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Samples a noisy state x_t using a hybrid of absorbing and frequency-aware uniform noise.
+        """
+        batch_size, seq_len = x_0.shape
+        p = p.view(batch_size, 1)
+
+        # 1. Create the primary corruption mask
+        corrupt_mask = torch.rand(batch_size, seq_len, device=self.device) < p
+
+        # 2. Decide which of the corrupted tokens will be masked vs. uniform
+        mask_decision = torch.rand(batch_size, seq_len, device=self.device) < self.mask_ratio
+        
+        absorb_mask = corrupt_mask & mask_decision
+        uniform_mask = corrupt_mask & ~mask_decision
+
+        # 3. Generate the noise
+        mask_tokens = torch.full_like(x_0, self.mask_token_id)
+        
+        # Sample from the frequency distribution for the uniform part
+        num_uniform = uniform_mask.sum()
+        uniform_tokens_flat = torch.multinomial(
+            self.token_distribution, num_samples=num_uniform, replacement=True
+        )
+        uniform_tokens = torch.zeros_like(x_0, device=self.device)
+        uniform_tokens[uniform_mask] = uniform_tokens_flat
+
+        # 4. Apply the noise
+        noisy_tokens = torch.where(absorb_mask, mask_tokens, x_0)
+        noisy_tokens = torch.where(uniform_mask, uniform_tokens, noisy_tokens)
+        
+        return noisy_tokens, corrupt_mask

@@ -1,6 +1,6 @@
-# Config for Path D: Self-Distrust Hybrid
-exp_id: "novel_self_distrust_hybrid"
-gpu: 3 # Assigned GPU
+# Config for the Frequency-Aware Self-Distrust Hybrid Model
+exp_id: "final_freq_hybrid"
+gpu: 0 # Assigned GPU
 
 dataset:
   name: "wikitext"
@@ -23,8 +23,8 @@ model:
   use_self_conditioning: false
 
 diffusion:
-  graph_type: "hybrid"
-  mask_ratio: 0.1 # Mostly uniform noise, with a 10% anchor of MASK tokens
+  graph_type: "frequency_hybrid" # Use our new combined graph
+  mask_ratio: 0.1 # The successful 10% anchor
   noise_schedule:
     name: "geometric"
     g_min: 0.001
@@ -33,7 +33,7 @@ diffusion:
 
 training:
   batch_size: 64
-  num_epochs: 50
+  num_epochs: 100
   learning_rate: 1.0e-4
   grad_clip: 1.0
   patience: 5

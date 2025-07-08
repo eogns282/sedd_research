@@ -84,7 +84,7 @@ class DiffusionProcess:
         return noisy_tokens, original_tokens, corruption_mask
 
     @torch.no_grad()
-    def remove_noise(self, model: nn.Module, noisy_tokens: torch.Tensor, t: torch.Tensor, guidance_scale: float = 1.0) -> torch.Tensor:
+    def remove_noise(self, model: nn.Module, noisy_tokens: torch.Tensor, t: torch.Tensor, guidance_scale: float = 1.0, **kwargs) -> torch.Tensor:
         """
         Performs one step of the reverse (denoising) process with optional
         Classifier-Free Guidance (CFG).
@@ -97,6 +97,7 @@ class DiffusionProcess:
             guidance_scale (float): The scale for CFG. A value of 1.0 is standard diffusion,
                                     while values > 1.0 increase the influence of the
                                     conditional prediction.
+            **kwargs: Additional keyword arguments to pass to the model (e.g., draft_tokens).
 
         Returns:
             torch.Tensor: The partially denoised tokens for the next step, x_{t-1}.
@@ -105,8 +106,8 @@ class DiffusionProcess:
         model.eval()
         
         # For CFG, we make two predictions: one conditional and one unconditional
-        conditional_output = model(noisy_tokens, t, context_mask=None) # Always conditional
-        unconditional_output = model(noisy_tokens, t, context_mask=torch.ones_like(t).bool()) # Unconditional
+        conditional_output = model(noisy_tokens, t, context_mask=None, **kwargs)
+        unconditional_output = model(noisy_tokens, t, context_mask=torch.ones_like(t).bool(), **kwargs)
         
         # Handle tuple output from gated attention model
         if isinstance(conditional_output, tuple):
@@ -117,7 +118,6 @@ class DiffusionProcess:
             unconditional_logits = unconditional_output
         
         # Combine the logits using the guidance scale
-        # logits = unconditional + scale * (conditional - unconditional)
         guided_logits = unconditional_logits + guidance_scale * (conditional_logits - unconditional_logits)
         
         # Convert logits to probabilities and sample

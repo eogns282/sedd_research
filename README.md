@@ -2,7 +2,7 @@
 
 This repository provides a research-grade framework for experimenting with Score-Entropy Discrete Diffusion models, based on the paper ["Discrete Diffusion Modeling by Estimating the Ratios of the Data Distribution"](https://arxiv.org/abs/2310.16834).
 
-The framework is designed to be clear, extensible, and easy to use for comparing different diffusion strategies (e.g., Uniform vs. Absorbing states) and for exploring new ideas in discrete diffusion.
+The framework is designed to be clear, extensible, and easy to use for comparing different diffusion strategies and for exploring new ideas in discrete diffusion. After a successful research arc, this repository now contains a novel, state-of-the-art uniform-based diffusion model that outperforms the standard absorbing state baseline.
 
 ## Project Structure
 
@@ -18,10 +18,8 @@ The framework is designed to be clear, extensible, and easy to use for comparing
 │   │   └─── config_loader.py # Handles loading YAML configs
 │   ├─── losses.py       # Training loss function
 │   └─── trainer.py      # Main training script
-├─── uniform_config.yaml # Configuration for the Uniform model
-├─── absorbing_config.yaml # Configuration for the Absorbing model
-├─── run_final_experiments.sh # End-to-end script to train and analyze both models
-├─── run_verification_test.sh # Quick script to verify the environment
+├─── freq_hybrid_config.yaml # Configuration for the new SOTA model
+├─── run_freq_hybrid_experiment.sh # Script to reproduce the SOTA result
 └─── requirements.txt  # Python dependencies
 ```
 
@@ -40,31 +38,28 @@ The framework is designed to be clear, extensible, and easy to use for comparing
 
 ## How to Run Experiments
 
-This framework is configured using `.yaml` files. The primary models are the original `Absorbing` model and the new state-of-the-art `Gated-Absorbing` model.
+This framework is configured using `.yaml` files. The final, state-of-the-art model is the **Frequency-Aware Hybrid Model**.
 
-### 1. Verifying the Framework
+### Reproducing the Final Results
 
-Before running long experiments, you can run a quick verification test to ensure all components are working correctly.
+To train and evaluate the final, best-performing model from scratch, use the `run_freq_hybrid_experiment.sh` script. This will train the model, run a full analysis, and save the results.
 ```bash
-./run_verification_test.sh
+./run_freq_hybrid_experiment.sh
 ```
+This script uses the `freq_hybrid_config.yaml` file. The final results will be located in `analysis_results/final_freq_hybrid/`.
 
-### 2. Reproducing the Final Results
+## Core Concepts
 
-To train and evaluate the final, best-performing model, use the `run_gated_absorbing_experiment.sh` script. This will train the model from scratch and run a full analysis.
-```bash
-./run_gated_absorbing_experiment.sh
-```
-This script uses the `gated_absorbing_config.yaml` file.
+### Diffusion Process
 
-To compare this to the original baselines, you can still use the `run_final_experiments.sh` script, which trains the original `Uniform` and `Absorbing` models.
+The core of the model is the `DiffusionProcess` defined in `src/diffusion/diffusion_process.py`. It uses a `Graph` object to define the transition probabilities between states.
 
-### 3. Analyzing Results
+### Graphs
 
-After the experiments are complete, all results will be saved in the `analysis_results/` directory under their respective `exp_id`s.
+The `Graph` objects in `src/diffusion/graph.py` define the noising strategy. The key innovation of this project is the **`FrequencyHybridGraph`**, which combines two successful techniques:
+-   **Hybrid Noise:** A small fraction (10%) of noise is the `[MASK]` token, providing a stable anchor for the model.
+-   **Frequency-Aware Noise:** The remaining 90% of noise is not purely uniform, but is sampled from the real-world frequency distribution of the training data, providing a more plausible and less destructive form of corruption.
 
-You can compare the summary files:
-- `analysis_results/final_absorbing/summary.yaml`
-- `analysis_results/final_gated_absorbing/summary.yaml`
+### Model
 
-This provides a clean and organized way to compare the performance of the models.
+The denoising model is a standard Transformer architecture, defined in `src/model.py`. It is trained to predict the original, uncorrupted token given a noised input.

@@ -20,39 +20,21 @@ def load_config(config_path: str) -> Dict[str, Any]:
         config = yaml.safe_load(f)
     return config
 
-def get_config() -> Any:
+def get_config(config_path: str) -> Any:
     """
-    Parses command-line arguments to get the config path, loads the config,
-    and returns it as an object.
+    Loads the config from a given path and returns it as a namespace object.
 
-    This allows for easy attribute access (e.g., `config.model.d_model`)
-    and is the main entry point for accessing configuration in the project.
+    Args:
+        config_path (str): The path to the YAML configuration file.
 
     Returns:
         Any: An object containing the configuration.
     """
-    parser = argparse.ArgumentParser(description="SEDD Research Framework")
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="config.yaml",
-        help="Path to the YAML configuration file."
-    )
-    parser.add_argument(
-        "--debug",
-        action="store_true",
-        help="Run in debug mode with a small dataset."
-    )
-    args = parser.parse_args()
-    
     # Load the config from the specified YAML file
-    cfg_dict = load_config(args.config)
+    cfg_dict = load_config(config_path)
     
     # Convert the nested dictionary to a Namespace object for attribute access
     config = dict_to_namespace(cfg_dict)
-    
-    # Add the debug flag to the config
-    config.debug = args.debug
     
     return config
 
@@ -70,9 +52,13 @@ def dict_to_namespace(d: Dict[str, Any]) -> argparse.Namespace:
 
 if __name__ == '__main__':
     # Example of how to use the config loader
-    config = get_config()
+    # This part is for standalone testing of the loader
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--config', type=str, default='config.yaml')
+    args = parser.parse_args()
+    config = get_config(args.config)
     print("--- Loaded Configuration ---")
     print(f"Experiment ID: {config.exp_id}")
     print(f"Model Dimension: {config.model.d_model}")
     print(f"Learning Rate: {config.training.learning_rate}")
-    print(f"Noise Schedule: {config.diffusion.noise_schedule.name}")
+    print(f"Noise Schedule: {config.diffusion.noise_schedule}")
