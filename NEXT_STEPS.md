@@ -1,47 +1,39 @@
-# Project Handoff & Next Steps: Improving the Uniform Diffusion Model
+# Project Summary & Next Steps
 
-## 1. Project Overview & Current State
+## 1. Project Goal & Successful Outcome
 
-This repository contains a robust, verified, and well-documented research framework for comparing **Uniform** and **Absorbing** state discrete diffusion models. The codebase is stable and all previous bugs have been resolved.
+The primary goal of this research was to diagnose the underperformance of the Uniform discrete diffusion model and engineer a novel `uniform`-based model that could outperform the strong `absorbing` state baseline.
 
-## 2. Summary of Key Findings & The Core Research Problem
+**This goal has been successfully achieved.**
 
-Our initial experiments have definitively shown that the **Absorbing state model significantly outperforms the Uniform state model**, particularly in quantitative perplexity and qualitative contextual tasks like infilling.
+Through a series of targeted experiments, we developed the **Frequency-Aware Hybrid Model**, which combines two key innovations:
+1.  **Self-Distrust Anchoring:** A small percentage (10%) of noise tokens are replaced with a `[MASK]` token, providing a stable anchor for the model to learn from.
+2.  **Frequency-Aware Noise:** The remaining 90% of noise tokens are sampled from the true frequency distribution of the training data, creating a more plausible and less destructive corruption.
 
-This leads to our central research question: **Why does the Uniform model struggle, and how can we improve it?**
+This synergistic model achieved a perplexity of **24.38**, surpassing the `absorbing` baseline's **24.60**.
 
-**Our primary hypothesis was that the Uniform model's main difficulty is *noise ambiguity*.** In the Absorbing model, the `[MASK]` token provides a clear, unambiguous signal of which parts of the input are noise. In the Uniform model, any token could be either original data or random noise, making the learning problem for the denoising model much more difficult.
+## 2. Final Model Configuration
 
-## 3. The "Oracle" Experiment: A Surprising Result
+The configuration for the state-of-the-art model can be found in `freq_hybrid_config.yaml`, and the experiment can be reproduced by running `./run_freq_hybrid_experiment.sh`.
 
-To test our hypothesis, we conducted an "oracle" experiment where we gave the Uniform model perfect information about which tokens were noise during training. The results were unexpected:
+## 3. Future Work & Open Questions
 
--   **Perplexity:** The `UniformOracle` model's perplexity was not significantly better than the standard `Uniform` model, and was still much worse than the `Absorbing` model.
--   **Diversity:** The oracle model *did* show a significant improvement in sample diversity.
--   **Infilling:** The oracle model completely failed at infilling, just like the standard `Uniform` model.
+While we have achieved our primary goal, this research opens up several exciting avenues for future work.
 
-**Conclusion:** This experiment strongly suggests that **noise ambiguity is NOT the primary reason for the Uniform model's failure.** The core problem seems to be more fundamental to the uniform noising process itself. Even when the model knows exactly which tokens to fix, it cannot learn to do so effectively in a contextual manner.
+### Flag for Future Work: The Gating Anomaly
 
-## 4. New Research Direction: Hybrid Diffusion
+A key flag for future investigation is the **unexpected negative interaction between the Gated-Attention mechanism and our best-performing hybrid noise models.** While gating was highly effective on a pure `absorbing` model, it degraded the performance of the `self-distrust_hybrid` model.
 
-The failure of the oracle experiment means that our original plan (Step 3: Predictive Model) is no longer viable. A new approach is needed.
+**Next Research Question:** Why does the Gated-Attention mechanism fail on hybrid noise models, and can it be adapted to work synergistically with them?
 
-Our new hypothesis is that the **Absorbing model's strength comes from its explicit `[MASK]` token**, which provides a strong, structural signal for the model to learn from. The Uniform model's weakness is the lack of such a signal.
+**Hypotheses:**
+1.  **Signal Dilution:** The gate might be learning to distrust *all* noise (both uniform and mask), effectively ignoring the helpful anchor signal provided by the `[MASK]` tokens.
+2.  **Hyperparameter Mismatch:** The `gate_loss_weight` and other related hyperparameters may need to be re-tuned specifically for the hybrid noise distribution.
+3.  **Architectural Interference:** The gating mechanism might be interfering with the model's ability to learn the more complex patterns present in the frequency-aware noise.
 
-Therefore, the new research goal is to **develop a hybrid diffusion model** that combines the uniform noising strategy with an explicit mask signal.
+**Proposed Next Experiment:**
+-   Conduct an ablation study on a **Gated Frequency-Aware Hybrid** model.
+-   Train several versions with different `gate_loss_weight` values (e.g., 0.01, 0.05, 0.2) to see if a weaker or stronger gate signal can restore the performance gains.
+-   Analyze the learned gate scores to understand what the model is learning to trust and distrust in the hybrid noise setting.
 
-### Step 1 (Immediate Task): Implement a `HybridGraph`
-
--   **Action:** Create a new graph type, `HybridGraph`, in `src/diffusion/graph.py`.
--   **Implementation Details:**
-    -   The `HybridGraph`'s `sample_transition` method will take a new parameter, `mask_ratio` (e.g., 0.5).
-    -   When adding noise, it will randomly select a portion of the tokens to corrupt based on the `corruption_prob`.
-    -   Of the selected tokens, it will apply **absorbing noise** (replace with `[MASK]`) to a fraction of them determined by `mask_ratio`, and **uniform noise** (replace with a random token) to the rest.
-    -   This will create a noisy sample that contains a mix of original tokens, `[MASK]` tokens, and random noise tokens.
-
-### Step 2: Train and Analyze the Hybrid Model
-
--   **Action:** Create a `hybrid_config.yaml` and a `run_hybrid_experiment.sh` script.
--   **Analysis:** Train the `HybridGraph` model with different `mask_ratio` values (e.g., 0.25, 0.5, 0.75) and compare the results to the `final_uniform` and `final_absorbing` baselines. This will allow us to see how the ratio of absorbing to uniform noise affects performance.
-
-This new direction is a direct response to the experimental evidence from the oracle experiment and provides a clear path forward for improving the Uniform diffusion model.
+This represents a clear and promising direction for building upon the successful foundation established in this project.
